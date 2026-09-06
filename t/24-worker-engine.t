@@ -585,6 +585,40 @@ subtest 'using cgroupv2' => sub {
     qr|Using cgroup /sys/fs/cgroup/.*/42|, 'use of cgroup logged';
 };
 
+subtest 'cgroup slice detection on pure cgroup v2 hosts (poo#205902)' => sub {
+    # On hosts using the pure cgroup v2 unified hierarchy /proc/$pid/cgroup contains a single
+    # "0::/…" line and no "name=systemd:" line (that only exists on cgroup v1/hybrid hosts). The
+    # slice detection must therefore also understand the "0::" format, otherwise it silently
+    # disables cgroup usage entirely (see GH#7475 which attempted a fix but was reverted as GH#7493
+    # because it broke cgroup cleanup on aarch64 workers).
+    my $file_mock = Test::MockModule->new('Mojo::File');
+    $file_mock->noop('make_path');
+
+    subtest 'pure cgroup v2 unified hierarchy' => sub {
+        $file_mock->redefine(
+            slurp => sub ($self, @args) {
+                return $self =~ m{/cgroup$}
+                  ? "0::/system.slice/openqa-worker-auto-restart\@16.service\n"
+                  : $file_mock->original('slurp')->($self, @args);
+            });
+        combined_like { OpenQA::Worker::Engines::isotovideo::_configure_cgroupv2({id => 42}) }
+        qr|Using cgroup /sys/fs/cgroup/system\.slice/openqa-worker-auto-restart\@16\.service/42|,
+          'slice parsed from the "0::" unified hierarchy line and used for the cgroup path';
+    };
+
+    subtest 'legacy/hybrid cgroup v1 with a named "systemd" hierarchy' => sub {
+        $file_mock->redefine(
+            slurp => sub ($self, @args) {
+                return $self =~ m{/cgroup$}
+                  ? "12:name=systemd:/user.slice/user-1000.slice/session-1.scope\n11:pids:/user.slice\n"
+                  : $file_mock->original('slurp')->($self, @args);
+            });
+        combined_like { OpenQA::Worker::Engines::isotovideo::_configure_cgroupv2({id => 42}) }
+        qr|Using cgroup /sys/fs/cgroup/systemd/user\.slice/user-1000\.slice/session-1\.scope/42|,
+          'slice parsed from the legacy "name=systemd:" line and used for the cgroup path';
+    };
+};
+
 subtest '_construct_isotovideo_cmd' => sub {
     local $OpenQA::Worker::Engines::isotovideo::CA_DIRS = [];
 

@@ -357,9 +357,17 @@ sub _configure_cgroupv2 ($job_info) {
         # determine cgroup slice of the current process
         try {
             my $pid = $$;
-            $cgroup_slice = (grep { /name=$cgroup_name:/ } split /\n/, path('/proc', $pid, 'cgroup')->slurp)[0]
-              if defined $pid;
-            $cgroup_slice =~ s/^.*name=$cgroup_name:/$cgroup_name/g if defined $cgroup_slice;
+            if (defined $pid) {
+                my @cgroup_lines = split /\n/, path('/proc', $pid, 'cgroup')->slurp;
+                # pure cgroup v2 unified hierarchy, e.g. "0::/system.slice/foo.service" (no named
+                # "systemd" hierarchy line exists in this case, see poo#205902/GH#7475)
+                ($cgroup_slice) = map { /^0::(.*)/ } @cgroup_lines;
+                unless (defined $cgroup_slice) {
+                    # legacy/hybrid cgroup v1 with a named "systemd" hierarchy
+                    $cgroup_slice = (grep { /name=$cgroup_name:/ } @cgroup_lines)[0];
+                    $cgroup_slice =~ s/^.*name=$cgroup_name:/$cgroup_name/g if defined $cgroup_slice;
+                }
+            }
         }
         catch ($e) { }
     }
