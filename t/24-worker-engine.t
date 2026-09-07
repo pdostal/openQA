@@ -587,10 +587,10 @@ subtest 'using cgroupv2' => sub {
 
 subtest 'cgroup slice detection on pure cgroup v2 hosts (poo#205902)' => sub {
     # On hosts using the pure cgroup v2 unified hierarchy /proc/$pid/cgroup contains a single
-    # "0::/…" line and no "name=systemd:" line (that only exists on cgroup v1/hybrid hosts). The
-    # slice detection must therefore also understand the "0::" format, otherwise it silently
-    # disables cgroup usage entirely (see GH#7475 which attempted a fix but was reverted as GH#7493
-    # because it broke cgroup cleanup on aarch64 workers).
+    # "0::/…" line and no "name=systemd:" line (that only appears when systemd hasn't switched to
+    # the unified hierarchy). The slice detection must therefore also understand the "0::" format,
+    # otherwise it silently disables cgroup usage entirely (see GH#7475 which attempted a fix but
+    # was reverted as GH#7493 because it broke cgroup cleanup on aarch64 workers).
     # each case below creates and mocks its own Test::MockModule object entirely within its own
     # leaf subtest. Sharing one mock object across sibling subtests (created in the outer scope,
     # redefined inside nested ones) looks equivalent but under Devel::Cover instrumentation (as
@@ -611,7 +611,7 @@ subtest 'cgroup slice detection on pure cgroup v2 hosts (poo#205902)' => sub {
           'slice parsed from the "0::" unified hierarchy line and used for the cgroup path';
     };
 
-    subtest 'legacy/hybrid cgroup v1 with a named "systemd" hierarchy' => sub {
+    subtest 'named "systemd" hierarchy line format (systemd not on the unified hierarchy)' => sub {
         my $file_mock = Test::MockModule->new('Mojo::File');
         $file_mock->noop('make_path');
         my $orig_slurp = $file_mock->original('slurp');
